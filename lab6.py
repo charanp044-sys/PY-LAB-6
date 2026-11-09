@@ -1,98 +1,102 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Page Configuration
 st.set_page_config(
     page_title="Gym Member Analytics",
+    page_icon="G",
     layout="wide"
 )
 
 st.title("Gym Member Analytics Dashboard")
 st.write("Explore and analyse gym member data.")
 
-# Load CSV Dataset
+# Load CSV dataset
 @st.cache_data
 def load_data():
-    df = pd.read_csv(r"E:\PY LAB 6\gym_members.csv")
+    df = pd.read_csv("gym_members.csv")
     df["Join_Date"] = pd.to_datetime(df["Join_Date"])
     return df
 
 df = load_data()
 
-# Sidebar Filters
+# Sidebar filters
 st.sidebar.header("Filter Options")
+
+membership_options = ["All"] + sorted(df["Membership"].dropna().unique().tolist())
 
 membership = st.sidebar.selectbox(
     "Select Membership",
-    ["All"] + sorted(df["Membership"].unique().tolist())
+    membership_options
 )
 
 gender = st.sidebar.multiselect(
     "Select Gender",
-    df["Gender"].unique(),
-    default=df["Gender"].unique().tolist()
+    sorted(df["Gender"].dropna().unique().tolist()),
+    default=sorted(df["Gender"].dropna().unique().tolist())
 )
 
 workout = st.sidebar.multiselect(
     "Select Workout Type",
-    df["Workout_Type"].unique(),
-    default=df["Workout_Type"].unique().tolist()
+    sorted(df["Workout_Type"].dropna().unique().tolist()),
+    default=sorted(df["Workout_Type"].dropna().unique().tolist())
 )
 
-age = st.sidebar.slider(
+min_age = int(df["Age"].min())
+max_age = int(df["Age"].max())
+
+age_range = st.sidebar.slider(
     "Select Age Range",
-    int(df["Age"].min()),
-    int(df["Age"].max()),
-    (int(df["Age"].min()), int(df["Age"].max()))
+    min_age,
+    max_age,
+    (min_age, max_age)
 )
 
-# Apply Filters
-filtered_df = df[
-    (df["Gender"].isin(gender)) &
-    (df["Workout_Type"].isin(workout)) &
-    (df["Age"].between(age[0], age[1]))
-]
+# Apply filters
+filtered_df = df.copy()
 
 if membership != "All":
     filtered_df = filtered_df[
         filtered_df["Membership"] == membership
     ]
 
-# Dashboard Metrics
-st.header("Dashboard Overview")
+filtered_df = filtered_df[
+    (filtered_df["Gender"].isin(gender)) &
+    (filtered_df["Workout_Type"].isin(workout)) &
+    (filtered_df["Age"].between(age_range[0], age_range[1]))
+]
+
+# Check filtered data
+if filtered_df.empty:
+    st.warning("No records found. Please change the filters.")
+    st.stop()
+
+# KPI Metrics
+st.header("Gym Statistics")
 
 col1, col2, col3, col4 = st.columns(4)
 
-total_members = len(filtered_df)
-total_fees = filtered_df["Monthly_Fee"].sum()
-
-average_age = (
-    round(filtered_df["Age"].mean(), 2)
-    if not filtered_df.empty else 0
+col1.metric(
+    "Total Members",
+    len(filtered_df)
 )
 
-average_fee = (
-    round(filtered_df["Monthly_Fee"].mean(), 2)
-    if not filtered_df.empty else 0
+col2.metric(
+    "Total Monthly Fees",
+    f"₹{filtered_df['Monthly_Fee'].sum():,.0f}"
 )
 
-col1.metric("Total Members", total_members)
-col2.metric("Total Monthly Fees", f"₹{total_fees:,.0f}")
-col3.metric("Average Age", average_age)
-col4.metric("Average Monthly Fee", f"₹{average_fee:,.2f}")
+col3.metric(
+    "Average Age",
+    f"{filtered_df['Age'].mean():.1f}"
+)
 
-# Category-wise Counts
-st.subheader("Membership Category Counts")
+col4.metric(
+    "Average Monthly Fee",
+    f"₹{filtered_df['Monthly_Fee'].mean():,.0f}"
+)
 
-if not filtered_df.empty:
-    category_data = filtered_df.groupby("Membership").size()
-    st.bar_chart(category_data)
-else:
-    st.info("No records found.")
-
-# Create Tabs
+# Tabs
 tab1, tab2, tab3, tab4 = st.tabs([
     "Overview",
     "Analysis",
@@ -100,173 +104,177 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "Insights"
 ])
 
-# TAB 1 - Overview
+# TAB 1: Overview
 with tab1:
+    st.header("Gym Member Overview")
 
-    st.header("Dataset Overview")
+    st.dataframe(
+        filtered_df,
+        use_container_width=True
+    )
 
-    st.dataframe(filtered_df, use_container_width=True)
+    st.subheader("Membership Category Count")
 
-    with st.expander("Dataset Information"):
-        st.write("Total Records:", len(filtered_df))
-        st.write("Total Columns:", len(filtered_df.columns))
-        st.write("Column Names:", list(filtered_df.columns))
-        st.write("Missing Values:")
-        st.write(filtered_df.isnull().sum())
+    membership_count = filtered_df.groupby(
+        "Membership"
+    ).size().reset_index(name="Total Members")
 
-# TAB 2 - Analysis
+    st.dataframe(
+        membership_count,
+        use_container_width=True
+    )
+
+# TAB 2: Analysis
 with tab2:
-
     st.header("Data Analysis")
 
-    if not filtered_df.empty:
+    st.subheader("Statistical Summary")
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("Members by Gender")
-            gender_data = filtered_df.groupby("Gender").size()
-            st.bar_chart(gender_data)
-
-        with col2:
-            st.subheader("Members by Workout Type")
-            workout_data = filtered_df.groupby("Workout_Type").size()
-            st.bar_chart(workout_data)
-
-        st.subheader("Membership Analysis")
-
-        analysis = filtered_df.groupby("Membership").agg(
-            Total_Members=("Member_ID", "count"),
-            Average_Fee=("Monthly_Fee", "mean"),
-            Average_Attendance=("Attendance_Days", "mean")
-        ).reset_index()
-
-        st.dataframe(analysis, use_container_width=True)
-
-        st.subheader("Numerical Data Summary")
-
-        st.write(filtered_df[
+    st.dataframe(
+        filtered_df[
             ["Age", "Monthly_Fee", "Attendance_Days", "Calories_Burned"]
-        ].describe())
+        ].describe(),
+        use_container_width=True
+    )
 
-    else:
-        st.info("No data available for analysis.")
+    st.subheader("Workout Type Analysis")
 
-# TAB 3 - Visualizations
+    workout_count = filtered_df.groupby(
+        "Workout_Type"
+    ).size().reset_index(name="Total Members")
+
+    st.dataframe(
+        workout_count,
+        use_container_width=True
+    )
+
+    st.subheader("Membership Fee Analysis")
+
+    fee_analysis = filtered_df.groupby(
+        "Membership"
+    )["Monthly_Fee"].mean().reset_index()
+
+    st.dataframe(
+        fee_analysis,
+        use_container_width=True
+    )
+
+# TAB 3: Visualizations
 with tab3:
-
     st.header("Data Visualizations")
 
-    if not filtered_df.empty:
+    # Bar Chart
+    st.subheader("Membership-wise Member Count")
 
-        # Bar Chart
-        st.subheader("1. Bar Chart - Members by Membership")
+    membership_chart = filtered_df.groupby(
+        "Membership"
+    ).size().reset_index(name="Total Members")
 
-        bar_data = filtered_df.groupby("Membership").size().reset_index(
-            name="Total Members"
-        )
+    fig1 = px.bar(
+        membership_chart,
+        x="Membership",
+        y="Total Members",
+        color="Membership",
+        title="Members in Each Membership Category",
+        labels={
+            "Membership": "Membership Type",
+            "Total Members": "Number of Members"
+        }
+    )
 
-        fig1 = px.bar(
-            bar_data,
-            x="Membership",
-            y="Total Members",
-            color="Membership",
-            title="Number of Members in Each Membership"
-        )
+    st.plotly_chart(fig1, use_container_width=True)
 
-        st.plotly_chart(fig1, use_container_width=True)
+    # Line Chart
+    st.subheader("Monthly Joining Trend")
 
-        st.write(
-            "Interpretation: This graph compares the number of members "
-            "in different membership categories."
-        )
+    monthly_data = filtered_df.copy()
+    monthly_data["Month"] = (
+        monthly_data["Join_Date"].dt.to_period("M").astype(str)
+    )
 
-        # Line Chart
-        st.subheader("2. Line Chart - Monthly Joining Trend")
+    monthly_count = monthly_data.groupby(
+        "Month"
+    ).size().reset_index(name="Total Members")
 
-        line_data = filtered_df.copy()
+    monthly_count = monthly_count.sort_values("Month")
 
-        line_data["Join_Month"] = (
-            line_data["Join_Date"].dt.to_period("M").astype(str)
-        )
+    fig2 = px.line(
+        monthly_count,
+        x="Month",
+        y="Total Members",
+        markers=True,
+        title="Number of Members Joining Each Month",
+        labels={
+            "Month": "Joining Month",
+            "Total Members": "Number of Members"
+        }
+    )
 
-        line_data = line_data.groupby("Join_Month").size().reset_index(
-            name="Total Members"
-        )
+    st.plotly_chart(fig2, use_container_width=True)
 
-        fig2 = px.line(
-            line_data,
-            x="Join_Month",
-            y="Total Members",
-            markers=True,
-            title="Monthly Gym Member Joining Trend"
-        )
+    # Scatter Plot
+    st.subheader("Age vs Monthly Fee")
 
-        st.plotly_chart(fig2, use_container_width=True)
+    fig3 = px.scatter(
+        filtered_df,
+        x="Age",
+        y="Monthly_Fee",
+        color="Membership",
+        size="Attendance_Days",
+        hover_data=["Name", "Workout_Type"],
+        title="Relationship Between Age and Monthly Fee",
+        labels={
+            "Age": "Member Age",
+            "Monthly_Fee": "Monthly Fee (₹)"
+        }
+    )
 
-        st.write(
-            "Interpretation: This graph shows the number of members "
-            "joining the gym in each month."
-        )
+    st.plotly_chart(fig3, use_container_width=True)
 
-        # Scatter Plot
-        st.subheader("3. Scatter Plot - Age vs Monthly Fee")
-
-        fig3 = px.scatter(
-            filtered_df,
-            x="Age",
-            y="Monthly_Fee",
-            color="Membership",
-            size="Attendance_Days",
-            hover_name="Name",
-            title="Relationship Between Age and Monthly Fee"
-        )
-
-        st.plotly_chart(fig3, use_container_width=True)
-
-        st.write(
-            "Interpretation: This graph compares member age and "
-            "monthly fees. The point size represents attendance days."
-        )
-
-    else:
-        st.info("No data available for visualizations.")
-
-# TAB 4 - Insights
+# TAB 4: Insights
 with tab4:
+    st.header("Gym Business Insights")
 
-    st.header("Important Insights")
+    popular_membership = (
+        filtered_df["Membership"].mode().iloc[0]
+    )
 
-    if not filtered_df.empty:
+    popular_workout = (
+        filtered_df["Workout_Type"].mode().iloc[0]
+    )
 
-        popular_membership = filtered_df["Membership"].mode()[0]
-        popular_workout = filtered_df["Workout_Type"].mode()[0]
+    highest_attendance = filtered_df.loc[
+        filtered_df["Attendance_Days"].idxmax()
+    ]
 
-        highest_attendance = filtered_df.loc[
-            filtered_df["Attendance_Days"].idxmax()
-        ]
+    st.success(
+        f"Most popular membership: {popular_membership}"
+    )
 
-        st.write("Most Popular Membership:", popular_membership)
-        st.write("Most Popular Workout:", popular_workout)
-        st.write("Average Member Age:", average_age)
-        st.write("Total Monthly Fees: ₹", total_fees)
+    st.info(
+        f"Most popular workout type: {popular_workout}"
+    )
 
-        st.write(
-            "Member with Highest Attendance:",
-            highest_attendance["Name"]
-        )
+    st.write(
+        "Member with highest attendance:",
+        highest_attendance["Name"]
+    )
 
-        st.write(
-            "Highest Attendance Days:",
-            highest_attendance["Attendance_Days"]
-        )
+    st.write(
+        "Highest attendance days:",
+        highest_attendance["Attendance_Days"]
+    )
 
-    else:
-        st.info("No insights available.")
+    st.write(
+        "Average calories burned:",
+        round(filtered_df["Calories_Burned"].mean(), 2)
+    )
 
-# Footer
-st.sidebar.write("--------------------")
-st.sidebar.caption("Gym Member Analytics Project")
+    st.subheader("Conclusion")
 
-st.write("--------------------")
-st.caption("Developed using Python, Pandas, Plotly and Streamlit.")
+    st.write(
+        "The dashboard helps analyse gym membership, "
+        "monthly fees, attendance, workout preferences "
+        "and member joining trends. The filters and charts "
+        "support better gym management decisions."
+    )
